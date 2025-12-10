@@ -680,7 +680,65 @@ public class SistemaCompletoTickets {
         }
     }
 
-    
+    private void reporteTicketsPorEstado() {
+        System.out.println("\n--- TICKETS POR ESTADO ---");
+
+        Map<String, Integer> conteoEstados = new HashMap<>();
+        Map<String, List<Ticket>> ticketsPorEstado = new HashMap<>();
+
+        conteoEstados.put("abierto", 0);
+        conteoEstados.put("en proceso", 0);
+        conteoEstados.put("cerrado", 0);
+
+        ticketsPorEstado.put("abierto", new ArrayList<>());
+        ticketsPorEstado.put("en proceso", new ArrayList<>());
+        ticketsPorEstado.put("cerrado", new ArrayList<>());
+
+        for (Ticket ticket : ticketsDB.values()) {
+            String estado = ticket.estado;
+            conteoEstados.put(estado, conteoEstados.get(estado) + 1);
+            ticketsPorEstado.get(estado).add(ticket);
+        }
+
+        System.out.println("ABIERTOS: " + conteoEstados.get("abierto") + " tickets");
+        System.out.println("EN PROCESO: " + conteoEstados.get("en proceso") + " tickets");
+        System.out.println("CERRADOS: " + conteoEstados.get("cerrado") + " tickets");
+        System.out.println("TOTAL: " + ticketsDB.size() + " tickets");
+
+        System.out.print("\n¿Mostrar detalles de un estado específico? (s/n): ");
+        String respuesta = scanner.nextLine();
+
+        if (respuesta.equalsIgnoreCase("s")) {
+            System.out.println("\nSeleccione estado:");
+            System.out.println("1. ABIERTOS");
+            System.out.println("2. EN PROCESO");
+            System.out.println("3. CERRADOS");
+            System.out.print("Opción: ");
+
+            String opcion = scanner.nextLine();
+            String estadoSeleccionado = switch (opcion) {
+                case "1" -> "abierto";
+                case "2" -> "en proceso";
+                case "3" -> "cerrado";
+                default -> null;
+            };
+
+            if (estadoSeleccionado != null) {
+                List<Ticket> tickets = ticketsPorEstado.get(estadoSeleccionado);
+                if (tickets.isEmpty()) {
+                    System.out.println("No hay tickets en estado " + estadoSeleccionado.toUpperCase());
+                } else {
+                    System.out.println("\nTickets en estado " + estadoSeleccionado.toUpperCase() + ":");
+                    for (Ticket ticket : tickets) {
+                        System.out.println("  • " + ticket.idTicket + " - " +
+                                ticket.descripcion.substring(0, Math.min(50, ticket.descripcion.length())) +
+                                (ticket.descripcion.length() > 50 ? "..." : ""));
+                    }
+                }
+            }
+        }
+    }
+
     private void reporteHistorialUsuario() {
         System.out.print("\nID del usuario: ");
         String idUsuario = scanner.nextLine();
@@ -738,68 +796,7 @@ public class SistemaCompletoTickets {
         System.out.println("Categorías existentes en el sistema: " + todasCategorias);
     }
 
-    // ==================== INICIALIZAR DATOS ====================
-    private void inicializarDatosEjemplo() {
-        // Crear usuarios de ejemplo con nuevos nombres
-        usuariosDB.put("U001", new Usuario("U001", "Mariana Medina", "marianisvv@empresa.com", "administrativo"));
-        usuariosDB.put("U002", new Usuario("U002", "Kevin Gutierrez", "quebin@universidad.edu", "alumno"));
-        usuariosDB.put("U003", new Usuario("U003", "Luis Vargas", "luis@empresa.com", "administrativo"));
 
-        // Crear técnicos de ejemplo con nuevos nombres y habilidades actualizadas
-        Set<String> habilidadesFernanda = new HashSet<>(Arrays.asList("redes", "hardware", "windows", "seguridad", "impresoras"));
-        Set<String> habilidadesJasmine = new HashSet<>(Arrays.asList("software", "correo", "linux", "aplicaciones", "virtualizacion"));
-        Set<String> habilidadesSofia = new HashSet<>(Arrays.asList("redes", "software", "backup", "telefonia", "monitoreo"));
-
-        tecnicosDB.put("T001", new Tecnico("T001", "Fernanda", "fernanda@soporte.mx", habilidadesFernanda));
-        tecnicosDB.put("T002", new Tecnico("T002", "Jasmine", "jasmine@soporte.mx", habilidadesJasmine));
-        tecnicosDB.put("T003", new Tecnico("T003", "Sofia", "sofia@soporte.mx", habilidadesSofia));
-
-        // Crear tickets de ejemplo
-        crearTicketEjemplo("U001", "No puedo acceder a internet desde mi oficina, la conexión está inestable",
-                "alto", Set.of("redes", "conectividad"));
-        crearTicketEjemplo("U002", "La impresora de la sala de profesores no funciona, muestra error",
-                "medio", Set.of("hardware", "impresoras"));
-        crearTicketEjemplo("U003", "El correo institucional no sincroniza en mi celular, no recibo notificaciones1" +
-                        "",
-                "crítico", Set.of("correo", "software", "movilidad"));
-        crearTicketEjemplo("U001", "El router del tercer piso no está funcionando, no hay señal WiFi",
-                "crítico", Set.of("redes", "wifi", "conectividad"));
-        crearTicketEjemplo("U002", "Microsoft Office no se está actualizando, error de licencia",
-                "medio", Set.of("software", "aplicaciones", "office"));
-        crearTicketEjemplo("U003", "Necesito recuperar archivos eliminados accidentalmente del servidor",
-                "alto", Set.of("backup", "software", "recuperacion"));
-
-        System.out.println("╔══════════════════════════════════════╗");
-        System.out.println("║   SISTEMA DE GESTIÓN DE TICKETS      ║");
-        System.out.println("║  Inicializado con datos de ejemplo   ║");
-        System.out.println("╚══════════════════════════════════════╝");
-        System.out.println("  • Usuarios registrados: " + usuariosDB.size());
-        System.out.println("  • Técnicos registrados: " + tecnicosDB.size());
-        System.out.println("  • Tickets creados: " + ticketsDB.size());
-        System.out.println("  • Tickets en cola de prioridad: " + colaPrioridad.size());
-        System.out.println("\n  Técnicos del equipo:");
-        System.out.println("    1. Fernanda - Especialista en redes y hardware");
-        System.out.println("    2. Jasmine - Especialista en software y sistemas");
-        System.out.println("    3. Sofia - Especialista en redes y recuperación");
-    }
-
-    private void crearTicketEjemplo(String usuarioId, String descripcion,
-                                    String prioridad, Set<String> categorias) {
-        String idTicket = "TKT-" + String.format("%04d", contadorTickets++);
-        Ticket ticket = new Ticket(idTicket, usuarioId, descripcion, prioridad, categorias);
-
-        ticketsDB.put(idTicket, ticket);
-        usuariosDB.get(usuarioId).agregarTicket(idTicket);
-
-        // Actualizar estadísticas
-        for (String categoria : categorias) {
-            estadisticasCategorias.put(categoria,
-                    estadisticasCategorias.getOrDefault(categoria, 0) + 1);
-        }
-
-        // Agregar algunos tickets a la cola
-        if (!prioridad.equals("bajo")) {
-            colaPrioridad.offer(ticket);
         }
     }
 }
