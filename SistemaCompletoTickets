@@ -1,0 +1,805 @@
+import java.util.*;
+import java.time.LocalDateTime;
+
+public class SistemaCompletoTickets {
+
+    // ==================== CLASE TICKET ====================
+    static class Ticket {
+        String idTicket;
+        String idUsuario;
+        String descripcion;
+        String estado; // "abierto", "en proceso", "cerrado"
+        String prioridad; // "crítico", "alto", "medio", "bajo"
+        LocalDateTime fechaCreacion;
+        String idTecnicoAsignado;
+        Set<String> categorias; // CONJUNTO de categorías
+
+        public Ticket(String idTicket, String idUsuario, String descripcion,
+                      String prioridad, Set<String> categorias) {
+            this.idTicket = idTicket;
+            this.idUsuario = idUsuario;
+            this.descripcion = descripcion;
+            this.estado = "abierto";
+            this.prioridad = prioridad;
+            this.fechaCreacion = LocalDateTime.now();
+            this.idTecnicoAsignado = null;
+            this.categorias = new HashSet<>(categorias);
+        }
+
+        public String toString() {
+            return String.format("Ticket #%s | Usuario: %s | Estado: %s | Prioridad: %s | Categorías: %s",
+                    idTicket, idUsuario, estado, prioridad, categorias);
+        }
+    }
+
+    // ==================== CLASE USUARIO ====================
+    static class Usuario {
+        String idUsuario;
+        String nombre;
+        String correo;
+        String tipoUsuario; // "administrativo" o "alumno"
+        List<String> ticketsCreados; // Lista de IDs de tickets
+
+        public Usuario(String idUsuario, String nombre, String correo, String tipoUsuario) {
+            this.idUsuario = idUsuario;
+            this.nombre = nombre;
+            this.correo = correo;
+            this.tipoUsuario = tipoUsuario;
+            this.ticketsCreados = new ArrayList<>();
+        }
+
+        void agregarTicket(String idTicket) {
+            ticketsCreados.add(idTicket);
+        }
+
+        public String toString() {
+            return String.format("Usuario: %s (%s) - Tipo: %s - Tickets: %d",
+                    nombre, correo, tipoUsuario, ticketsCreados.size());
+        }
+    }
+
+    // ==================== CLASE TÉCNICO ====================
+    static class Tecnico {
+        String idTecnico;
+        String nombre;
+        String correo;
+        Set<String> habilidades; // CONJUNTO de habilidades
+        List<String> ticketsAsignados; // Lista de IDs de tickets
+
+        public Tecnico(String idTecnico, String nombre, String correo, Set<String> habilidades) {
+            this.idTecnico = idTecnico;
+            this.nombre = nombre;
+            this.correo = correo;
+            this.habilidades = new HashSet<>(habilidades);
+            this.ticketsAsignados = new ArrayList<>();
+        }
+
+        boolean puedeAtender(Set<String> categoriasTicket) {
+            // INTERSECCIÓN de conjuntos: habilidades ∩ categoriasTicket
+            Set<String> interseccion = new HashSet<>(this.habilidades);
+            interseccion.retainAll(categoriasTicket);
+            return !interseccion.isEmpty();
+        }
+
+        int cantidadInterseccion(Set<String> categoriasTicket) {
+            // Cantidad de elementos en la intersección
+            Set<String> interseccion = new HashSet<>(this.habilidades);
+            interseccion.retainAll(categoriasTicket);
+            return interseccion.size();
+        }
+
+        public String toString() {
+            return String.format("Técnico: %s - Habilidades: %s - Tickets asignados: %d",
+                    nombre, habilidades, ticketsAsignados.size());
+        }
+    }
+
+    // ==================== COMPARADOR PARA HEAP ====================
+    static class ComparadorTickets implements Comparator<Ticket> {
+        private Map<String, Integer> valoresPrioridad;
+        private Map<String, Integer> prioridadTipoUsuario;
+
+        public ComparadorTickets() {
+            valoresPrioridad = new HashMap<>();
+            valoresPrioridad.put("crítico", 0);
+            valoresPrioridad.put("alto", 1);
+            valoresPrioridad.put("medio", 2);
+            valoresPrioridad.put("bajo", 3);
+
+            prioridadTipoUsuario = new HashMap<>();
+            prioridadTipoUsuario.put("administrativo", 0);
+            prioridadTipoUsuario.put("alumno", 1);
+        }
+
+        @Override
+        public int compare(Ticket t1, Ticket t2) {
+            // Primero por nivel de severidad
+            int prioridad1 = valoresPrioridad.getOrDefault(t1.prioridad, 2);
+            int prioridad2 = valoresPrioridad.getOrDefault(t2.prioridad, 2);
+
+            if (prioridad1 != prioridad2) {
+                return Integer.compare(prioridad1, prioridad2);
+            }
+
+            // Luego por tiempo de espera (fecha más antigua primero)
+            int comparacionFecha = t1.fechaCreacion.compareTo(t2.fechaCreacion);
+            if (comparacionFecha != 0) {
+                return comparacionFecha;
+            }
+
+            // Finalmente por tipo de usuario (si se conoce)
+            // Esto requiere acceso a la información del usuario
+            return 0;
+        }
+    }
+
+    // ==================== ESTRUCTURAS DE DATOS ====================
+    private Map<String, Ticket> ticketsDB;          // TABLA HASH: idTicket -> Ticket
+    private PriorityQueue<Ticket> colaPrioridad;    // HEAP: cola de prioridad de tickets
+    private Map<String, Usuario> usuariosDB;        // DICCIONARIO: idUsuario -> Usuario
+    private Map<String, Tecnico> tecnicosDB;        // DICCIONARIO: idTecnico -> Tecnico
+    private Map<String, Integer> estadisticasCategorias; // Para conteo por categoría
+
+    private int contadorTickets = 1;
+    private Scanner scanner;
+
+    // ==================== CONSTRUCTOR ====================
+    public SistemaCompletoTickets() {
+        ticketsDB = new HashMap<>();
+        colaPrioridad = new PriorityQueue<>(new ComparadorTickets());
+        usuariosDB = new HashMap<>();
+        tecnicosDB = new HashMap<>();
+        estadisticasCategorias = new HashMap<>();
+        scanner = new Scanner(System.in);
+    }
+
+    // ==================== MÉTODO MAIN ====================
+    public static void main(String[] args) {
+        SistemaCompletoTickets sistema = new SistemaCompletoTickets();
+        sistema.inicializarDatosEjemplo();
+        sistema.ejecutar();
+    }
+
+    // ==================== MENÚ PRINCIPAL ====================
+    private void ejecutar() {
+        boolean salir = false;
+
+        while (!salir) {
+            System.out.println("\n════════════ MENÚ PRINCIPAL ════════════");
+            System.out.println("1. Gestión de usuarios y técnicos");
+            System.out.println("2. Gestión de tickets");
+            System.out.println("3. Cola de atención (heap)");
+            System.out.println("4. Asignación inteligente");
+            System.out.println("5. Reportes");
+            System.out.println("0. Salir");
+            System.out.print("Seleccione una opción: ");
+
+            String opcion = scanner.nextLine();
+
+            switch (opcion) {
+                case "1" -> menuGestionUsuariosTecnicos();
+                case "2" -> menuGestionTickets();
+                case "3" -> menuColaAtencion();
+                case "4" -> menuAsignacionInteligente();
+                case "5" -> menuReportes();
+                case "0" -> salir = true;
+                default -> System.out.println("Opción no válida.");
+            }
+        }
+
+        scanner.close();
+        System.out.println("\n¡Hasta luego!");
+    }
+
+    // ==================== 1. GESTIÓN DE USUARIOS Y TÉCNICOS ====================
+    private void menuGestionUsuariosTecnicos() {
+        while (true) {
+            System.out.println("\n--- Gestión de Usuarios y Técnicos ---");
+            System.out.println("1. Registrar usuario");
+            System.out.println("2. Registrar técnico");
+            System.out.println("3. Consultar información de usuario");
+            System.out.println("4. Consultar información de técnico");
+            System.out.println("0. Volver al menú principal");
+            System.out.print("Opción: ");
+
+            String opcion = scanner.nextLine();
+
+            switch (opcion) {
+                case "1" -> registrarUsuario();
+                case "2" -> registrarTecnico();
+                case "3" -> consultarUsuario();
+                case "4" -> consultarTecnico();
+                case "0" -> { return; }
+                default -> System.out.println("Opción no válida.");
+            }
+        }
+    }
+
+    private void registrarUsuario() {
+        System.out.println("\n--- REGISTRAR NUEVO USUARIO ---");
+        System.out.print("ID único: ");
+        String id = scanner.nextLine();
+
+        if (usuariosDB.containsKey(id)) {
+            System.out.println("Error: El ID ya existe.");
+            return;
+        }
+
+        System.out.print("Nombre completo: ");
+        String nombre = scanner.nextLine();
+        System.out.print("Correo electrónico: ");
+        String correo = scanner.nextLine();
+
+        System.out.println("Tipo de usuario:");
+        System.out.println("1. ADMINISTRATIVO");
+        System.out.println("2. ALUMNO");
+        System.out.print("Seleccione: ");
+        String tipo = scanner.nextLine();
+
+        String tipoUsuario = tipo.equals("1") ? "administrativo" : "alumno";
+
+        usuariosDB.put(id, new Usuario(id, nombre, correo, tipoUsuario));
+        System.out.println("✓ Usuario registrado exitosamente.");
+    }
+
+    private void registrarTecnico() {
+        System.out.println("\n--- REGISTRAR NUEVO TÉCNICO ---");
+        System.out.print("ID único: ");
+        String id = scanner.nextLine();
+
+        if (tecnicosDB.containsKey(id)) {
+            System.out.println("Error: El ID ya existe.");
+            return;
+        }
+
+        System.out.print("Nombre completo: ");
+        String nombre = scanner.nextLine();
+        System.out.print("Correo electrónico: ");
+        String correo = scanner.nextLine();
+
+        System.out.println("Habilidades (separar por comas):");
+        System.out.println("Ejemplo: redes, hardware, software, windows, correo");
+        System.out.print("Habilidades: ");
+        String habilidadesInput = scanner.nextLine();
+
+        String[] habilidadesArray = habilidadesInput.split(",");
+        Set<String> habilidades = new HashSet<>();
+        for (String habilidad : habilidadesArray) {
+            habilidades.add(habilidad.trim().toLowerCase());
+        }
+
+        tecnicosDB.put(id, new Tecnico(id, nombre, correo, habilidades));
+        System.out.println("✓ Técnico registrado exitosamente.");
+    }
+
+    private void consultarUsuario() {
+        System.out.print("\nID del usuario: ");
+        String id = scanner.nextLine();
+
+        Usuario usuario = usuariosDB.get(id);
+        if (usuario == null) {
+            System.out.println("✗ Usuario no encontrado.");
+            return;
+        }
+
+        System.out.println("\n--- INFORMACIÓN DEL USUARIO ---");
+        System.out.println("ID: " + usuario.idUsuario);
+        System.out.println("Nombre: " + usuario.nombre);
+        System.out.println("Correo: " + usuario.correo);
+        System.out.println("Tipo: " + usuario.tipoUsuario);
+        System.out.println("Tickets creados: " + usuario.ticketsCreados.size());
+
+        if (!usuario.ticketsCreados.isEmpty()) {
+            System.out.println("Lista de tickets:");
+            for (String ticketId : usuario.ticketsCreados) {
+                Ticket ticket = ticketsDB.get(ticketId);
+                if (ticket != null) {
+                    System.out.println("  • " + ticket.idTicket + " - " +
+                            ticket.estado + " - " + ticket.prioridad);
+                }
+            }
+        }
+    }
+
+    private void consultarTecnico() {
+        System.out.print("\nID del técnico: ");
+        String id = scanner.nextLine();
+
+        Tecnico tecnico = tecnicosDB.get(id);
+        if (tecnico == null) {
+            System.out.println("✗ Técnico no encontrado.");
+            return;
+        }
+
+        System.out.println("\n--- INFORMACIÓN DEL TÉCNICO ---");
+        System.out.println("ID: " + tecnico.idTecnico);
+        System.out.println("Nombre: " + tecnico.nombre);
+        System.out.println("Correo: " + tecnico.correo);
+        System.out.println("Habilidades: " + tecnico.habilidades);
+        System.out.println("Tickets asignados: " + tecnico.ticketsAsignados.size());
+
+        if (!tecnico.ticketsAsignados.isEmpty()) {
+            System.out.println("Tickets actualmente asignados:");
+            for (String ticketId : tecnico.ticketsAsignados) {
+                Ticket ticket = ticketsDB.get(ticketId);
+                if (ticket != null) {
+                    System.out.println("  • " + ticket.idTicket + " - " +
+                            ticket.estado + " - " + ticket.prioridad);
+                }
+            }
+        }
+    }
+
+    // ==================== 2. GESTIÓN DE TICKETS ====================
+    private void menuGestionTickets() {
+        while (true) {
+            System.out.println("\n--- Gestión de Tickets ---");
+            System.out.println("1. Crear ticket nuevo (asignar ID)");
+            System.out.println("2. Consultar ticket por ID");
+            System.out.println("3. Cambiar estado de ticket");
+            System.out.println("0. Volver al menú principal");
+            System.out.print("Opción: ");
+
+            String opcion = scanner.nextLine();
+
+            switch (opcion) {
+                case "1" -> crearTicket();
+                case "2" -> consultarTicketPorID();
+                case "3" -> cambiarEstadoTicket();
+                case "0" -> { return; }
+                default -> System.out.println("Opción no válida.");
+            }
+        }
+    }
+
+    private void crearTicket() {
+        System.out.println("\n--- CREAR NUEVO TICKET ---");
+
+        System.out.print("ID del usuario que reporta: ");
+        String idUsuario = scanner.nextLine();
+
+        if (!usuariosDB.containsKey(idUsuario)) {
+            System.out.println("✗ Error: Usuario no registrado.");
+            return;
+        }
+
+        System.out.print("Descripción del problema: ");
+        String descripcion = scanner.nextLine();
+
+        System.out.println("Prioridad del ticket:");
+        System.out.println("1. CRÍTICO");
+        System.out.println("2. ALTO");
+        System.out.println("3. MEDIO");
+        System.out.println("4. BAJO");
+        System.out.print("Seleccione (1-4): ");
+
+        String prioridad;
+        switch (scanner.nextLine()) {
+            case "1" -> prioridad = "crítico";
+            case "2" -> prioridad = "alto";
+            case "3" -> prioridad = "medio";
+            case "4" -> prioridad = "bajo";
+            default -> {
+                System.out.println("Opción inválida, se asignará MEDIO.");
+                prioridad = "medio";
+            }
+        }
+
+        System.out.println("Categorías del ticket (separar por comas):");
+        System.out.println("Ejemplo: redes, hardware, software, correo");
+        System.out.print("Categorías: ");
+        String categoriasInput = scanner.nextLine();
+
+        String[] categoriasArray = categoriasInput.split(",");
+        Set<String> categorias = new HashSet<>();
+        for (String categoria : categoriasArray) {
+            String cat = categoria.trim().toLowerCase();
+            categorias.add(cat);
+
+            // Actualizar estadísticas de categorías
+            estadisticasCategorias.put(cat, estadisticasCategorias.getOrDefault(cat, 0) + 1);
+        }
+
+        // Generar ID único para el ticket
+        String idTicket = "TKT-" + String.format("%04d", contadorTickets++);
+
+        // Crear y almacenar el ticket
+        Ticket nuevoTicket = new Ticket(idTicket, idUsuario, descripcion, prioridad, categorias);
+        ticketsDB.put(idTicket, nuevoTicket);
+
+        // Registrar en el usuario
+        usuariosDB.get(idUsuario).agregarTicket(idTicket);
+
+        System.out.println("\n✓ Ticket creado exitosamente.");
+        System.out.println("  ID del ticket: " + idTicket);
+        System.out.println("  Estado inicial: " + nuevoTicket.estado);
+        System.out.println("  Prioridad: " + nuevoTicket.prioridad);
+        System.out.println("  Categorías: " + nuevoTicket.categorias);
+    }
+
+    private void consultarTicketPorID() {
+        System.out.print("\nID del ticket: ");
+        String idTicket = scanner.nextLine();
+
+        Ticket ticket = ticketsDB.get(idTicket);
+        if (ticket == null) {
+            System.out.println("✗ Ticket no encontrado.");
+            return;
+        }
+
+        System.out.println("\n--- INFORMACIÓN DEL TICKET ---");
+        System.out.println("ID: " + ticket.idTicket);
+        System.out.println("Usuario: " + ticket.idUsuario);
+        System.out.println("Descripción: " + ticket.descripcion);
+        System.out.println("Estado: " + ticket.estado);
+        System.out.println("Prioridad: " + ticket.prioridad);
+        System.out.println("Categorías: " + ticket.categorias);
+        System.out.println("Fecha creación: " + ticket.fechaCreacion);
+
+        if (ticket.idTecnicoAsignado != null) {
+            System.out.println("Técnico asignado: " + ticket.idTecnicoAsignado);
+        } else {
+            System.out.println("Técnico asignado: Ninguno");
+        }
+    }
+
+    private void cambiarEstadoTicket() {
+        System.out.print("\nID del ticket: ");
+        String idTicket = scanner.nextLine();
+
+        Ticket ticket = ticketsDB.get(idTicket);
+        if (ticket == null) {
+            System.out.println("✗ Ticket no encontrado.");
+            return;
+        }
+
+        System.out.println("Estado actual: " + ticket.estado);
+        System.out.println("Nuevo estado:");
+        System.out.println("1. ABIERTO");
+        System.out.println("2. EN PROCESO");
+        System.out.println("3. CERRADO");
+        System.out.print("Seleccione (1-3): ");
+
+        String nuevoEstado;
+        switch (scanner.nextLine()) {
+            case "1" -> nuevoEstado = "abierto";
+            case "2" -> nuevoEstado = "en proceso";
+            case "3" -> nuevoEstado = "cerrado";
+            default -> {
+                System.out.println("Opción inválida.");
+                return;
+            }
+        }
+
+        ticket.estado = nuevoEstado;
+        System.out.println("✓ Estado actualizado a: " + nuevoEstado);
+    }
+
+    // ==================== 3. COLA DE ATENCIÓN (HEAP) ====================
+    private void menuColaAtencion() {
+        while (true) {
+            System.out.println("\n--- Cola de Atención (Heap) ---");
+            System.out.println("1. Agregar ticket a la cola de prioridad");
+            System.out.println("2. Ver siguiente ticket a atender (sin sacar)");
+            System.out.println("3. Atender ticket (extraer del heap y asignar técnico)");
+            System.out.println("0. Volver al menú principal");
+            System.out.print("Opción: ");
+
+            String opcion = scanner.nextLine();
+
+            switch (opcion) {
+                case "1" -> agregarTicketACola();
+                case "2" -> verSiguienteTicket();
+                case "3" -> atenderTicket();
+                case "0" -> { return; }
+                default -> System.out.println("Opción no válida.");
+            }
+        }
+    }
+
+    private void agregarTicketACola() {
+        System.out.print("\nID del ticket: ");
+        String idTicket = scanner.nextLine();
+
+        Ticket ticket = ticketsDB.get(idTicket);
+        if (ticket == null) {
+            System.out.println("✗ Ticket no encontrado.");
+            return;
+        }
+
+        if (!ticket.estado.equals("abierto")) {
+            System.out.println("✗ Solo se pueden encolar tickets en estado ABIERTO.");
+            return;
+        }
+
+        if (colaPrioridad.contains(ticket)) {
+            System.out.println("✗ El ticket ya está en la cola de prioridad.");
+            return;
+        }
+
+        colaPrioridad.offer(ticket);
+        System.out.println("✓ Ticket agregado a la cola de prioridad.");
+    }
+
+    private void verSiguienteTicket() {
+        Ticket siguiente = colaPrioridad.peek();
+        if (siguiente == null) {
+            System.out.println("\nLa cola de prioridad está vacía.");
+            return;
+        }
+
+        System.out.println("\n--- SIGUIENTE TICKET A ATENDER ---");
+        System.out.println("ID: " + siguiente.idTicket);
+        System.out.println("Prioridad: " + siguiente.prioridad);
+        System.out.println("Usuario: " + siguiente.idUsuario);
+        System.out.println("Descripción: " + siguiente.descripcion);
+        System.out.println("Categorías: " + siguiente.categorias);
+        System.out.println("Tiempo en cola: " +
+                java.time.Duration.between(siguiente.fechaCreacion, LocalDateTime.now()).toMinutes() +
+                " minutos");
+    }
+
+    private void atenderTicket() {
+        Ticket ticket = colaPrioridad.poll();
+        if (ticket == null) {
+            System.out.println("\n✗ No hay tickets en la cola de prioridad.");
+            return;
+        }
+
+        System.out.println("\n--- ATENDIENDO TICKET ---");
+        System.out.println("Ticket: " + ticket.idTicket);
+        System.out.println("Prioridad: " + ticket.prioridad);
+        System.out.println("Categorías: " + ticket.categorias);
+        System.out.println("Descripción: " + ticket.descripcion);
+
+        // Buscar técnico adecuado usando intersección de conjuntos
+        String tecnicoAsignado = buscarTecnicoAdecuado(ticket.categorias);
+
+        if (tecnicoAsignado != null) {
+            ticket.idTecnicoAsignado = tecnicoAsignado;
+            ticket.estado = "en proceso";
+
+            // Registrar la asignación en el diccionario de técnicos
+            Tecnico tecnico = tecnicosDB.get(tecnicoAsignado);
+            if (tecnico != null) {
+                tecnico.ticketsAsignados.add(ticket.idTicket);
+            }
+
+            System.out.println("✓ Ticket asignado al técnico: " + tecnicoAsignado);
+            System.out.println("  Estado actualizado: " + ticket.estado);
+        } else {
+            System.out.println("✗ No hay técnicos disponibles con las habilidades necesarias.");
+            System.out.println("  El ticket se devuelve a la cola.");
+            colaPrioridad.offer(ticket);
+        }
+    }
+
+    private String buscarTecnicoAdecuado(Set<String> categoriasTicket) {
+        String mejorTecnico = null;
+        int mejorPuntuacion = 0;
+
+        for (Tecnico tecnico : tecnicosDB.values()) {
+            int puntuacion = tecnico.cantidadInterseccion(categoriasTicket);
+            if (puntuacion > mejorPuntuacion) {
+                mejorPuntuacion = puntuacion;
+                mejorTecnico = tecnico.idTecnico;
+            }
+        }
+
+        return mejorTecnico;
+    }
+
+    // ==================== 4. ASIGNACIÓN INTELIGENTE ====================
+    private void menuAsignacionInteligente() {
+        System.out.println("\n--- Asignación Inteligente ---");
+        System.out.print("ID del ticket: ");
+        String idTicket = scanner.nextLine();
+
+        Ticket ticket = ticketsDB.get(idTicket);
+        if (ticket == null) {
+            System.out.println("✗ Ticket no encontrado.");
+            return;
+        }
+
+        if (ticket.estado.equals("cerrado")) {
+            System.out.println("✗ No se puede asignar un ticket cerrado.");
+            return;
+        }
+
+        System.out.println("Categorías del ticket: " + ticket.categorias);
+
+        // Buscar técnicos cuyo conjunto de habilidades intersecte con las categorías
+        List<Tecnico> tecnicosAptos = new ArrayList<>();
+        for (Tecnico tecnico : tecnicosDB.values()) {
+            if (tecnico.puedeAtender(ticket.categorias)) {
+                tecnicosAptos.add(tecnico);
+            }
+        }
+
+        if (tecnicosAptos.isEmpty()) {
+            System.out.println("✗ No hay técnicos con las habilidades necesarias.");
+            return;
+        }
+
+        System.out.println("\nTécnicos aptos (ordenados por mejor coincidencia):");
+        tecnicosAptos.sort((t1, t2) ->
+                Integer.compare(t2.cantidadInterseccion(ticket.categorias),
+                        t1.cantidadInterseccion(ticket.categorias)));
+
+        for (int i = 0; i < tecnicosAptos.size(); i++) {
+            Tecnico t = tecnicosAptos.get(i);
+            System.out.printf("%d. %s - Habilidades: %s (Coincidencias: %d)%n",
+                    i + 1, t.nombre, t.habilidades,
+                    t.cantidadInterseccion(ticket.categorias));
+        }
+
+        System.out.print("\nSeleccione el número del técnico a asignar (0 para cancelar): ");
+        try {
+            int seleccion = Integer.parseInt(scanner.nextLine());
+
+            if (seleccion == 0) {
+                return;
+            }
+
+            if (seleccion > 0 && seleccion <= tecnicosAptos.size()) {
+                Tecnico tecnicoSeleccionado = tecnicosAptos.get(seleccion - 1);
+
+                ticket.idTecnicoAsignado = tecnicoSeleccionado.idTecnico;
+                ticket.estado = "en proceso";
+                tecnicoSeleccionado.ticketsAsignados.add(ticket.idTicket);
+
+                System.out.println("✓ Ticket asignado a: " + tecnicoSeleccionado.nombre);
+                System.out.println("  ID Técnico: " + tecnicoSeleccionado.idTecnico);
+            } else {
+                System.out.println("✗ Selección inválida.");
+            }
+        } catch (NumberFormatException e) {
+            System.out.println("✗ Entrada inválida.");
+        }
+    }
+
+    // ==================== 5. REPORTES ====================
+    private void menuReportes() {
+        while (true) {
+            System.out.println("\n--- Reportes ---");
+            System.out.println("1. Listar tickets por estado");
+            System.out.println("2. Historial de tickets por usuario");
+            System.out.println("3. Cantidad de tickets por categoría");
+            System.out.println("0. Volver al menú principal");
+            System.out.print("Opción: ");
+
+            String opcion = scanner.nextLine();
+
+            switch (opcion) {
+                case "1" -> reporteTicketsPorEstado();
+                case "2" -> reporteHistorialUsuario();
+                case "3" -> reporteTicketsPorCategoria();
+                case "0" -> { return; }
+                default -> System.out.println("Opción no válida.");
+            }
+        }
+    }
+
+    
+    private void reporteHistorialUsuario() {
+        System.out.print("\nID del usuario: ");
+        String idUsuario = scanner.nextLine();
+
+        Usuario usuario = usuariosDB.get(idUsuario);
+        if (usuario == null) {
+            System.out.println("✗ Usuario no encontrado.");
+            return;
+        }
+
+        System.out.println("\n--- HISTORIAL DE TICKETS ---");
+        System.out.println("Usuario: " + usuario.nombre);
+        System.out.println("Correo: " + usuario.correo);
+        System.out.println("Tipo: " + usuario.tipoUsuario);
+        System.out.println("Total tickets creados: " + usuario.ticketsCreados.size());
+
+        if (usuario.ticketsCreados.isEmpty()) {
+            System.out.println("\nEl usuario no ha creado tickets.");
+            return;
+        }
+
+        System.out.println("\nLista de tickets:");
+        for (String ticketId : usuario.ticketsCreados) {
+            Ticket ticket = ticketsDB.get(ticketId);
+            if (ticket != null) {
+                String asignado = ticket.idTecnicoAsignado != null ?
+                        " (Asignado a: " + ticket.idTecnicoAsignado + ")" : "";
+                System.out.printf("  • %s | %s | %s | %s%s%n",
+                        ticket.idTicket, ticket.estado, ticket.prioridad,
+                        ticket.fechaCreacion.toLocalDate(), asignado);
+            }
+        }
+    }
+
+    private void reporteTicketsPorCategoria() {
+        System.out.println("\n--- TICKETS POR CATEGORÍA ---");
+
+        if (estadisticasCategorias.isEmpty()) {
+            System.out.println("No hay tickets registrados.");
+            return;
+        }
+
+        System.out.println("Conteo por categoría:");
+        for (Map.Entry<String, Integer> entry : estadisticasCategorias.entrySet()) {
+            System.out.printf("  %-12s: %d tickets%n", entry.getKey(), entry.getValue());
+        }
+
+        // Mostrar UNIÓN de todas las categorías
+        Set<String> todasCategorias = new HashSet<>();
+        for (Ticket ticket : ticketsDB.values()) {
+            todasCategorias.addAll(ticket.categorias);
+        }
+
+        System.out.println("\nTotal de categorías únicas: " + todasCategorias.size());
+        System.out.println("Categorías existentes en el sistema: " + todasCategorias);
+    }
+
+    // ==================== INICIALIZAR DATOS ====================
+    private void inicializarDatosEjemplo() {
+        // Crear usuarios de ejemplo con nuevos nombres
+        usuariosDB.put("U001", new Usuario("U001", "Mariana Medina", "marianisvv@empresa.com", "administrativo"));
+        usuariosDB.put("U002", new Usuario("U002", "Kevin Gutierrez", "quebin@universidad.edu", "alumno"));
+        usuariosDB.put("U003", new Usuario("U003", "Luis Vargas", "luis@empresa.com", "administrativo"));
+
+        // Crear técnicos de ejemplo con nuevos nombres y habilidades actualizadas
+        Set<String> habilidadesFernanda = new HashSet<>(Arrays.asList("redes", "hardware", "windows", "seguridad", "impresoras"));
+        Set<String> habilidadesJasmine = new HashSet<>(Arrays.asList("software", "correo", "linux", "aplicaciones", "virtualizacion"));
+        Set<String> habilidadesSofia = new HashSet<>(Arrays.asList("redes", "software", "backup", "telefonia", "monitoreo"));
+
+        tecnicosDB.put("T001", new Tecnico("T001", "Fernanda", "fernanda@soporte.mx", habilidadesFernanda));
+        tecnicosDB.put("T002", new Tecnico("T002", "Jasmine", "jasmine@soporte.mx", habilidadesJasmine));
+        tecnicosDB.put("T003", new Tecnico("T003", "Sofia", "sofia@soporte.mx", habilidadesSofia));
+
+        // Crear tickets de ejemplo
+        crearTicketEjemplo("U001", "No puedo acceder a internet desde mi oficina, la conexión está inestable",
+                "alto", Set.of("redes", "conectividad"));
+        crearTicketEjemplo("U002", "La impresora de la sala de profesores no funciona, muestra error",
+                "medio", Set.of("hardware", "impresoras"));
+        crearTicketEjemplo("U003", "El correo institucional no sincroniza en mi celular, no recibo notificaciones1" +
+                        "",
+                "crítico", Set.of("correo", "software", "movilidad"));
+        crearTicketEjemplo("U001", "El router del tercer piso no está funcionando, no hay señal WiFi",
+                "crítico", Set.of("redes", "wifi", "conectividad"));
+        crearTicketEjemplo("U002", "Microsoft Office no se está actualizando, error de licencia",
+                "medio", Set.of("software", "aplicaciones", "office"));
+        crearTicketEjemplo("U003", "Necesito recuperar archivos eliminados accidentalmente del servidor",
+                "alto", Set.of("backup", "software", "recuperacion"));
+
+        System.out.println("╔══════════════════════════════════════╗");
+        System.out.println("║   SISTEMA DE GESTIÓN DE TICKETS      ║");
+        System.out.println("║  Inicializado con datos de ejemplo   ║");
+        System.out.println("╚══════════════════════════════════════╝");
+        System.out.println("  • Usuarios registrados: " + usuariosDB.size());
+        System.out.println("  • Técnicos registrados: " + tecnicosDB.size());
+        System.out.println("  • Tickets creados: " + ticketsDB.size());
+        System.out.println("  • Tickets en cola de prioridad: " + colaPrioridad.size());
+        System.out.println("\n  Técnicos del equipo:");
+        System.out.println("    1. Fernanda - Especialista en redes y hardware");
+        System.out.println("    2. Jasmine - Especialista en software y sistemas");
+        System.out.println("    3. Sofia - Especialista en redes y recuperación");
+    }
+
+    private void crearTicketEjemplo(String usuarioId, String descripcion,
+                                    String prioridad, Set<String> categorias) {
+        String idTicket = "TKT-" + String.format("%04d", contadorTickets++);
+        Ticket ticket = new Ticket(idTicket, usuarioId, descripcion, prioridad, categorias);
+
+        ticketsDB.put(idTicket, ticket);
+        usuariosDB.get(usuarioId).agregarTicket(idTicket);
+
+        // Actualizar estadísticas
+        for (String categoria : categorias) {
+            estadisticasCategorias.put(categoria,
+                    estadisticasCategorias.getOrDefault(categoria, 0) + 1);
+        }
+
+        // Agregar algunos tickets a la cola
+        if (!prioridad.equals("bajo")) {
+            colaPrioridad.offer(ticket);
+        }
+    }
+}
